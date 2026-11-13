@@ -1,0 +1,508 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==================== Reusable Hardened Primitives ====================
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        (
+          request.auth.token.email == 'obedawy95@gmail.com' ||
+          exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        );
+    }
+
+    function isStr(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isBoundedStringList(val, maxSize) {
+      return val is list &&
+        val.size() <= maxSize &&
+        (val.size() == 0 || (val[0] is string && val[0].size() <= 300));
+    }
+
+    function isBoundedMapList(val, maxSize) {
+      return val is list &&
+        val.size() <= maxSize &&
+        (val.size() == 0 || val[0] is map);
+    }
+
+    function isNumRange(val, minVal, maxVal) {
+      return val is number && val >= minVal && val <= maxVal;
+    }
+
+    function n10(val) {
+      return val is number && val >= 0 && val <= 10;
+    }
+
+    function n120(val) {
+      return val is number && val >= 0 && val <= 120;
+    }
+
+    // ==================== Entity Validation Helpers ====================
+    function isValidPostVisitLog(data, docId) {
+      return data.keys().hasAll([
+          'id', 'timestamp', 'createdAt', 'childAgeGroup', 'actualDurationMinutes',
+          'requestedExtraTime', 'extraTimeNotes', 'topMomQuestion', 'pricingSentiment',
+          'missedOpportunities', 'atmosphereRating', 'characterName', 'staffNameOrCode'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'timestamp', 'createdAt', 'childAgeGroup', 'actualDurationMinutes',
+          'requestedExtraTime', 'extraTimeNotes', 'topMomQuestion', 'pricingSentiment',
+          'missedOpportunities', 'atmosphereRating', 'characterName', 'staffNameOrCode'
+        ]) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isStr(data.timestamp, 64) && data.timestamp.size() >= 10 &&
+        data.createdAt == request.time &&
+        isStr(data.childAgeGroup, 64) &&
+        isNumRange(data.actualDurationMinutes, 1, 180) &&
+        data.requestedExtraTime is bool &&
+        isStr(data.extraTimeNotes, 2000) &&
+        isStr(data.topMomQuestion, 1000) &&
+        isStr(data.pricingSentiment, 100) &&
+        isBoundedStringList(data.missedOpportunities, 20) &&
+        isNumRange(data.atmosphereRating, 1, 5) &&
+        isStr(data.characterName, 128) &&
+        isStr(data.staffNameOrCode, 128);
+    }
+
+    function isValidMotherSurvey(data, docId) {
+      return data.keys().hasAll([
+          'id', 'timestamp', 'createdAt', 'experienceRating', 'wasTenMinutesEnough',
+          'interestedInPaidExtension', 'pricingFeedback', 'customerServiceSatisfaction',
+          'appExperienceFeedback', 'missingWishes', 'whatsappOptIn', 'whatsappPhone'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'timestamp', 'createdAt', 'experienceRating', 'wasTenMinutesEnough',
+          'interestedInPaidExtension', 'pricingFeedback', 'customerServiceSatisfaction',
+          'appExperienceFeedback', 'missingWishes', 'whatsappOptIn', 'whatsappPhone'
+        ]) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isStr(data.timestamp, 64) && data.timestamp.size() >= 10 &&
+        data.createdAt == request.time &&
+        isNumRange(data.experienceRating, 1, 5) &&
+        isStr(data.wasTenMinutesEnough, 100) &&
+        isStr(data.interestedInPaidExtension, 100) &&
+        isStr(data.pricingFeedback, 100) &&
+        isStr(data.customerServiceSatisfaction, 200) &&
+        isStr(data.appExperienceFeedback, 2000) &&
+        isStr(data.missingWishes, 2000) &&
+        data.whatsappOptIn is bool &&
+        isStr(data.whatsappPhone, 32);
+    }
+
+    function isValidDriverSurvey(data, docId) {
+      return data.keys().hasAll([
+          'id', 'submittedAt', 'createdAt', 'driverNameOrCode', 'experiencePeriod',
+          'dailyDeliveriesAvg', 'vehicleType', 'commonDeliveryItems', 'lateArrivalOutOfTen',
+          'lateArrivalReasons', 'lateArrivalJustification', 'doorOpener', 'clientRequiresEntry',
+          'photoProofFrequencyOutOfTen', 'pricingCommentsHeard', 'appMapComplaints',
+          'customerServiceFeedback', 'customerServiceSupportRating', 'biggestRoadblock',
+          'suggestionsForOps'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'submittedAt', 'createdAt', 'driverNameOrCode', 'experiencePeriod',
+          'dailyDeliveriesAvg', 'vehicleType', 'commonDeliveryItems', 'lateArrivalOutOfTen',
+          'lateArrivalReasons', 'lateArrivalJustification', 'doorOpener', 'clientRequiresEntry',
+          'photoProofFrequencyOutOfTen', 'pricingCommentsHeard', 'appMapComplaints',
+          'customerServiceFeedback', 'customerServiceSupportRating', 'biggestRoadblock',
+          'suggestionsForOps'
+        ]) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isStr(data.submittedAt, 64) && data.submittedAt.size() >= 10 &&
+        data.createdAt == request.time &&
+        isStr(data.driverNameOrCode, 128) &&
+        isStr(data.experiencePeriod, 100) &&
+        isNumRange(data.dailyDeliveriesAvg, 0, 100) &&
+        isStr(data.vehicleType, 128) &&
+        isBoundedStringList(data.commonDeliveryItems, 20) &&
+        isNumRange(data.lateArrivalOutOfTen, 0, 10) &&
+        isBoundedStringList(data.lateArrivalReasons, 20) &&
+        isStr(data.lateArrivalJustification, 2000) &&
+        isStr(data.doorOpener, 100) &&
+        isStr(data.clientRequiresEntry, 200) &&
+        isNumRange(data.photoProofFrequencyOutOfTen, 0, 10) &&
+        isStr(data.pricingCommentsHeard, 100) &&
+        isStr(data.appMapComplaints, 2000) &&
+        isStr(data.customerServiceFeedback, 500) &&
+        isNumRange(data.customerServiceSupportRating, 1, 5) &&
+        isStr(data.biggestRoadblock, 1000) &&
+        isStr(data.suggestionsForOps, 2000);
+    }
+
+    function isValidCustomerServiceSurvey(data, docId) {
+      return data.keys().hasAll([
+          'id', 'submittedAt', 'createdAt', 'agentNameOrCode', 'shiftType',
+          'dailyTicketsCount', 'topInquiryTypes', 'pricingCommentsReceived',
+          'commonClientComplaintsAboutCS', 'complaintsAboutCSDetails',
+          'appWebsiteComplaintsDetails', 'cancellationReasons', 'unservedDemands',
+          'toolsNeededToImprove', 'generalNotes'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'submittedAt', 'createdAt', 'agentNameOrCode', 'shiftType',
+          'dailyTicketsCount', 'topInquiryTypes', 'pricingCommentsReceived',
+          'commonClientComplaintsAboutCS', 'complaintsAboutCSDetails',
+          'appWebsiteComplaintsDetails', 'cancellationReasons', 'unservedDemands',
+          'toolsNeededToImprove', 'generalNotes'
+        ]) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isStr(data.submittedAt, 64) && data.submittedAt.size() >= 10 &&
+        data.createdAt == request.time &&
+        isStr(data.agentNameOrCode, 128) &&
+        isStr(data.shiftType, 128) &&
+        isNumRange(data.dailyTicketsCount, 0, 500) &&
+        isBoundedStringList(data.topInquiryTypes, 20) &&
+        isStr(data.pricingCommentsReceived, 100) &&
+        isBoundedStringList(data.commonClientComplaintsAboutCS, 20) &&
+        isStr(data.complaintsAboutCSDetails, 2000) &&
+        isStr(data.appWebsiteComplaintsDetails, 3000) &&
+        isBoundedStringList(data.cancellationReasons, 20) &&
+        isBoundedStringList(data.unservedDemands, 20) &&
+        isStr(data.toolsNeededToImprove, 2000) &&
+        isStr(data.generalNotes, 2000);
+    }
+
+    function isValidOperationsSurvey(data, docId) {
+      return data.keys().hasAll([
+          'id', 'submittedAt', 'createdAt', 'coordinatorNameOrCode', 'shiftType',
+          'dailyDispatchedVisits', 'scheduleAdherenceRating', 'driverLatenessRateOutOfTen',
+          'mascotLatenessRateOutOfTen', 'primaryDispatchBottlenecks',
+          'costumeReadinessAndMaintenance', 'appBookingIntegrationIssues',
+          'pricingFeedbackFromOperations', 'coordinationBetweenCSAndField',
+          'peakHoursStrategyFeedback', 'proposalsForLeadership'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'submittedAt', 'createdAt', 'coordinatorNameOrCode', 'shiftType',
+          'dailyDispatchedVisits', 'scheduleAdherenceRating', 'driverLatenessRateOutOfTen',
+          'mascotLatenessRateOutOfTen', 'primaryDispatchBottlenecks',
+          'costumeReadinessAndMaintenance', 'appBookingIntegrationIssues',
+          'pricingFeedbackFromOperations', 'coordinationBetweenCSAndField',
+          'peakHoursStrategyFeedback', 'proposalsForLeadership'
+        ]) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isStr(data.submittedAt, 64) && data.submittedAt.size() >= 10 &&
+        data.createdAt == request.time &&
+        isStr(data.coordinatorNameOrCode, 128) &&
+        isStr(data.shiftType, 128) &&
+        isNumRange(data.dailyDispatchedVisits, 0, 500) &&
+        isNumRange(data.scheduleAdherenceRating, 1, 5) &&
+        isNumRange(data.driverLatenessRateOutOfTen, 0, 10) &&
+        isNumRange(data.mascotLatenessRateOutOfTen, 0, 10) &&
+        isBoundedStringList(data.primaryDispatchBottlenecks, 20) &&
+        isStr(data.costumeReadinessAndMaintenance, 2000) &&
+        isStr(data.appBookingIntegrationIssues, 2000) &&
+        isStr(data.pricingFeedbackFromOperations, 1000) &&
+        isStr(data.coordinationBetweenCSAndField, 2000) &&
+        isStr(data.peakHoursStrategyFeedback, 2000) &&
+        isStr(data.proposalsForLeadership, 3000);
+    }
+
+    // Enforce strict 79-key bijection without repeating a 79-string array literal:
+    // data.keys().size() == 79 proves |keys| == 79, while isValidStaffSurvey
+    // unconditionally accesses all 79 distinct keys (missing/swapped keys abort with deny).
+    function isValidStaffBriefStrings(d) {
+      let a = d.workDuration + d.childAgeGroup + d.housingType + d.doorOpener + d.parentsReception;
+      let b = d.prepTimeMinutes + d.giftRecipient + d.seenCompetitorGifts + d.giftOpeningReaction + d.pricingSentiment;
+      let c = d.momsKnowTenMinLimit + d.primaryConversationPartner + d.bestTimingForOffers + d.costumeHoursDaily + d.emergencyPreparedness;
+      let e = d.frequentCharacters + d.frequentAreas + d.customerServiceFeedback + d.oneMessageAboutKidzy;
+      let f = d.costumeDifficulty + d.safetyFeeling + d.costumeChangingSpace + d.selfIntroduction;
+      let s = a + b + c + e + f;
+      return s is string && s.size() <= 8564;
+    }
+
+    function isValidStaffLongStringsA(d) {
+      let a = d.isTenMinutesEnoughReason + d.lateArrivalJustification + d.lastTwoMinutesDesc + d.bestMomentDesc + d.worstMomentDesc;
+      let b = d.handlingScaredChild + d.childrenSpecialRequests + d.otherChildrenGiftReply + d.observedInterests + d.handlingAttachmentOnLeave;
+      let c = d.childAskingToBuy + d.momBehaviorDuringVisit + d.topThreeMomQuestions + d.appWebsiteComplaints + d.momsUnawareTenMinReaction;
+      let e = d.momRepeatPromise + d.bestTimingForOffersReason + d.momDiscomfortMoments;
+      let s = a + b + c + e;
+      return s is string && s.size() <= 36000;
+    }
+
+    function isValidStaffLongStringsB(d) {
+      let a = d.photoVideoRequests + d.siblingsInterest + d.otherDifficultSituations + d.unleveragedMomChildComments + d.upcomingEventsNoticed;
+      let b = d.websiteWhatsappInquiries + d.frictionInProposing + d.neighborsRelativesInterest + d.trainingFeedback;
+      let c = d.materialsNeeded + d.biggestRiskPerceived + d.firstThingToChange + d.firstMinuteDesc;
+      let e = d.bestVisitExperience + d.hardestVisitExperience + d.messageToLeadership + d.finalComments;
+      let s = a + b + c + e;
+      return s is string && s.size() <= 39000;
+    }
+
+    function isValidStaffTimeAllocation(t) {
+      return t.keys().size() == 5 &&
+        n120(t.entrance) && n120(t.gift) && n120(t.play) && n120(t.photos) && n120(t.farewell);
+    }
+
+    function isValidStaffChildReactions(c) {
+      return c.keys().size() == 4 &&
+        n10(c.directJoy) && n10(c.shyness) && n10(c.fearOrCrying) && n10(c.extremeAttachment);
+    }
+
+    function isValidStaffMomOvertimeStrings(m) {
+      let s = m.staffAction + m.delayedNextVisit + m.paidExtensionExperience + m.wishedCompanyGuidance;
+      return s is string && s.size() <= 3500;
+    }
+
+    function isValidStaffMomOvertime(m) {
+      return m.keys().size() == 6 &&
+        n10(m.frequency) &&
+        isNumRange(m.requestedMinutes, 0, 240) &&
+        isValidStaffMomOvertimeStrings(m);
+    }
+
+    function isValidStaffNumbersAndCollections(d) {
+      return isNumRange(d.dailyVisitsAvg, 0, 100) &&
+        isNumRange(d.isTenMinutesEnough, 1, 5) &&
+        n10(d.overflowFrequency) &&
+        n120(d.overflowMinutesAvg) &&
+        n10(d.photoFrequencyOutOfTen) &&
+        n10(d.lateArrivalOutOfTen) &&
+        n10(d.otherChildrenGiftAskOutOfTen) &&
+        n10(d.extraToysInCarAskOutOfTen) &&
+        d.timeAllocation is map && isValidStaffTimeAllocation(d.timeAllocation) &&
+        d.childReactions is map && isValidStaffChildReactions(d.childReactions) &&
+        d.momOvertime is map && isValidStaffMomOvertime(d.momOvertime) &&
+        d.momInquiriesFrequency is map && d.momInquiriesFrequency.size() <= 15 &&
+        d.situations is map && d.situations.size() <= 15 &&
+        isBoundedStringList(d.whoAttends, 15) &&
+        isBoundedStringList(d.potentialServices, 20) &&
+        isBoundedMapList(d.ideasEvaluation, 15) &&
+        isBoundedMapList(d.voiceNotes, 20);
+    }
+
+    function isValidStaffSurvey(data, docId) {
+      return data.keys().size() == 79 &&
+        data.id == docId &&
+        isStr(data.submittedAt, 64) && data.submittedAt.size() >= 10 &&
+        data.createdAt == request.time &&
+        data.consent is bool &&
+        isValidStaffBriefStrings(data) &&
+        isValidStaffLongStringsA(data) &&
+        isValidStaffLongStringsB(data) &&
+        isValidStaffNumbersAndCollections(data);
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt']) &&
+        data.keys().hasOnly(['email', 'role', 'createdAt']) &&
+        isStr(data.email, 200) &&
+        data.role == 'admin' &&
+        data.createdAt == request.time;
+    }
+
+    function isMediaPlatform(val) {
+      return val in ['meta', 'snapchat', 'tiktok', 'google_ads', 'kidzy_store'];
+    }
+
+    function isValidMediaAccount(data, docId) {
+      return data.keys().hasAll([
+          'id', 'platform', 'accountName', 'accountId', 'pixelOrTagId',
+          'monthlyBudgetQar', 'currency', 'status', 'lastSyncedAt', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'platform', 'accountName', 'accountId', 'pixelOrTagId',
+          'monthlyBudgetQar', 'currency', 'status', 'lastSyncedAt', 'createdAt'
+        ]) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isMediaPlatform(data.platform) &&
+        isStr(data.accountName, 160) &&
+        isStr(data.accountId, 128) &&
+        isStr(data.pixelOrTagId, 128) &&
+        isNumRange(data.monthlyBudgetQar, 0, 10000000) &&
+        isStr(data.currency, 16) &&
+        data.status in ['connected', 'paused', 'attention'] &&
+        isStr(data.lastSyncedAt, 64) && data.lastSyncedAt.size() >= 10 &&
+        data.createdAt == request.time;
+    }
+
+    function isValidMediaAccountUpdate(data, docId) {
+      return data.keys().hasAll([
+          'id', 'platform', 'accountName', 'accountId', 'pixelOrTagId',
+          'monthlyBudgetQar', 'currency', 'status', 'lastSyncedAt', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'platform', 'accountName', 'accountId', 'pixelOrTagId',
+          'monthlyBudgetQar', 'currency', 'status', 'lastSyncedAt', 'createdAt'
+        ]) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isMediaPlatform(data.platform) &&
+        isStr(data.accountName, 160) &&
+        isStr(data.accountId, 128) &&
+        isStr(data.pixelOrTagId, 128) &&
+        isNumRange(data.monthlyBudgetQar, 0, 10000000) &&
+        isStr(data.currency, 16) &&
+        data.status in ['connected', 'paused', 'attention'] &&
+        isStr(data.lastSyncedAt, 64) && data.lastSyncedAt.size() >= 10 &&
+        data.createdAt == existing().createdAt;
+    }
+
+    function isValidMediaSnapshot(data, docId) {
+      return data.keys().hasAll([
+          'id', 'platform', 'accountId', 'campaignName', 'date',
+          'spendQar', 'impressions', 'reach', 'clicks', 'conversions',
+          'revenueQar', 'videoViews3s', 'source', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'platform', 'accountId', 'campaignName', 'date',
+          'spendQar', 'impressions', 'reach', 'clicks', 'conversions',
+          'revenueQar', 'videoViews3s', 'source', 'createdAt'
+        ]) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isMediaPlatform(data.platform) &&
+        isStr(data.accountId, 128) &&
+        isStr(data.campaignName, 200) &&
+        isStr(data.date, 32) && data.date.size() == 10 &&
+        isNumRange(data.spendQar, 0, 50000000) &&
+        isNumRange(data.impressions, 0, 500000000) &&
+        isNumRange(data.reach, 0, 500000000) &&
+        isNumRange(data.clicks, 0, 100000000) &&
+        isNumRange(data.conversions, 0, 10000000) &&
+        isNumRange(data.revenueQar, 0, 100000000) &&
+        isNumRange(data.videoViews3s, 0, 500000000) &&
+        data.source in ['manual', 'csv', 'webhook', 'sync'] &&
+        data.createdAt == request.time;
+    }
+
+    function isValidMediaRetentionLog(data, docId) {
+      return data.keys().hasAll([
+          'id', 'executedAt', 'triggerType', 'cutoffDate',
+          'deletedCount', 'freedEstimatedKb', 'remainingCount', 'notes', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'executedAt', 'triggerType', 'cutoffDate',
+          'deletedCount', 'freedEstimatedKb', 'remainingCount', 'notes', 'createdAt'
+        ]) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isStr(data.executedAt, 64) && data.executedAt.size() >= 10 &&
+        data.triggerType in ['auto-6m-schedule', 'manual'] &&
+        isStr(data.cutoffDate, 32) &&
+        isNumRange(data.deletedCount, 0, 1000000) &&
+        isNumRange(data.freedEstimatedKb, 0, 10000000) &&
+        isNumRange(data.remainingCount, 0, 1000000) &&
+        isStr(data.notes, 500) &&
+        data.createdAt == request.time;
+    }
+
+    function isValidUxPropertyAudit(data, docId) {
+      return data.keys().hasAll(['id', 'inspectedAt', 'website', 'iosApp', 'androidApp', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'inspectedAt', 'website', 'iosApp', 'androidApp', 'createdAt']) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        isStr(data.inspectedAt, 64) && data.inspectedAt.size() >= 10 &&
+        data.website is map && data.website.size() <= 15 &&
+        data.iosApp is map && data.iosApp.size() <= 15 &&
+        data.androidApp is map && data.androidApp.size() <= 15 &&
+        data.createdAt == request.time;
+    }
+
+    // ==================== Collection Rules ====================
+    match /admins/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidId(userId) && isValidAdminUser(incoming());
+      allow update: if isAdmin() && isValidId(userId) && isValidAdminUser(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // Public anonymous survey submission & guest response viewing; deletions strictly restricted to Admin
+    match /post_visit_logs/{logId} {
+      allow get, list: if true;
+      allow create: if isValidId(logId) && isValidPostVisitLog(incoming(), logId);
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(logId);
+    }
+
+    match /staff_surveys/{surveyId} {
+      allow get, list: if true;
+      allow create: if isValidId(surveyId) && isValidStaffSurvey(incoming(), surveyId);
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(surveyId);
+    }
+
+    match /mother_surveys/{surveyId} {
+      allow get, list: if true;
+      allow create: if isValidId(surveyId) && isValidMotherSurvey(incoming(), surveyId);
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(surveyId);
+    }
+
+    match /driver_surveys/{surveyId} {
+      allow get, list: if true;
+      allow create: if isValidId(surveyId) && isValidDriverSurvey(incoming(), surveyId);
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(surveyId);
+    }
+
+    match /cs_surveys/{surveyId} {
+      allow get, list: if true;
+      allow create: if isValidId(surveyId) && isValidCustomerServiceSurvey(incoming(), surveyId);
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(surveyId);
+    }
+
+    match /ops_surveys/{surveyId} {
+      allow get, list: if true;
+      allow create: if isValidId(surveyId) && isValidOperationsSurvey(incoming(), surveyId);
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(surveyId);
+    }
+
+    // Media KPIs, retention logs & live UX property inspection collections
+    match /media_accounts/{accountId} {
+      allow get, list: if true;
+      allow create: if isAdmin() && isValidId(accountId) && isValidMediaAccount(incoming(), accountId);
+      allow update: if isAdmin() && isValidId(accountId) && isValidMediaAccountUpdate(incoming(), accountId);
+      allow delete: if isAdmin() && isValidId(accountId);
+    }
+
+    match /media_snapshots/{snapshotId} {
+      allow get, list: if true;
+      allow create: if isValidId(snapshotId) && isValidMediaSnapshot(incoming(), snapshotId);
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(snapshotId);
+    }
+
+    match /media_retention_logs/{logId} {
+      allow get, list: if true;
+      allow create: if isAdmin() && isValidId(logId) && isValidMediaRetentionLog(incoming(), logId);
+      allow update, delete: if false;
+    }
+
+    match /ux_property_audits/{auditId} {
+      allow get, list: if true;
+      allow create: if isValidId(auditId) && isValidUxPropertyAudit(incoming(), auditId);
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(auditId);
+    }
+  }
+}

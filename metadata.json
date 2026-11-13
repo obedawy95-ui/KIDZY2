@@ -1,0 +1,6 @@
+{
+  "name": "Kidzy Survey Hub | منصة استبيانات كيدزي",
+  "description": "منصة شاملة لاستبيان موظفات الشخصيات، مذكرة ما بعد الزيارة (30 ثانية)، استبيان الأمهات، ومولد كود Google Apps Script ولوحة تحليلات العمليات الميدانية لخدمة كيدزي.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
